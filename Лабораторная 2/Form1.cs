@@ -17,17 +17,16 @@ namespace Лабораторная_2
     public partial class Form1 : Form
     {
         public VideoCapture capture;
-        CascadeClassifier face;
-        Mat image = new Mat();
-        Image<Bgr, byte> input;
-        Mat frame;
         
         private Func func = new Func();
 
+        int frameCounter = 0;
+        
         public Form1()
         {
             InitializeComponent();
         }
+        
         private void button1_Click(object sender, EventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog();
@@ -35,84 +34,57 @@ namespace Лабораторная_2
             if (result == DialogResult.OK) // открытие выбранного файла
             {
                 string fileName = openFileDialog.FileName;
-                func.Source(fileName);
 
-                imageBox1.Image = func.sourceImage;
+                capture = new VideoCapture(fileName);
+                timer1.Enabled = true;
             }
         }
-
-        private void button2_Click(object sender, EventArgs e)
-        {
-            imageBox2.Image = func.Binarization();
-        }
-
-        private void button3_Click(object sender, EventArgs e)
-        {
-            imageBox2.Image = func.Binarization();
-            for (int i = 0; i < func.rois.Count; i++)
-            {
-                int k = i + 1;
-                listBox2.Items.Add("Область " + k.ToString());
-            }
-        }
-
-        private void listBox2_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            imageBox2.Image = func.ROI(listBox2.SelectedIndex);
-            imageBox3.Image = func.ROIOut(listBox2.SelectedIndex);
-            label1.Text = func.Translate(func.ROIOut(listBox2.SelectedIndex), "eng");
-        }
-
+        
         private void button4_Click(object sender, EventArgs e)
         {
             capture = new VideoCapture();
             capture.ImageGrabbed += ProcessFrame;
             capture.Start();
         }
-
-        private void button5_Click(object sender, EventArgs e)
+        
+        private void ProcessFrame(object sender, EventArgs e)
         {
-            face = new CascadeClassifier("D:\\AOIClab5\\haarcascade_frontalface_default.xml");
-
-            OpenFileDialog f = new OpenFileDialog();
-            f.ShowDialog();
-
-            frame = CvInvoke.Imread(f.FileName, ImreadModes.Unchanged);
-
-            imageBox2.Image = frame.Split()[3];
+            int tb1 = trackBar1.Value;
+            var frame = new Mat();
+            capture.Retrieve(frame);
+            if (func.bg != null)
+            {
+                imageBox1.Image = func.obl(frame, tb1);
+                imageBox2.Image = func.obl2(frame, tb1);
+            }
+            else
+            {
+                imageBox1.Image = frame;
+                imageBox2.Image = frame;
+            }
+        }
+        
+        private void button2_Click(object sender, EventArgs e)
+        {
+            var frame = new Mat();
+            capture.Retrieve(frame);
+            
+            func.bg = frame.ToImage<Gray, byte>();
         }
 
-        public void ProcessFrame(object sender, EventArgs e)
+        private void timer1_Tick(object sender, EventArgs e)
         {
-            capture.Retrieve(image);
+            int tb1 = trackBar1.Value;
+            var frame = capture.QueryFrame();
+            imageBox1.Image = func.obl(frame, tb1);
+            imageBox2.Image = func.obl2(frame, tb1);
 
-            input = image.ToImage<Bgr, byte>();
-
-            List<Rectangle> faces = new List<Rectangle>();
-            
-            Image<Bgra, byte> res = input.Convert<Bgra, byte>();
-            
-            using (Mat ugray = new Mat())
+            frameCounter++;
+            if (frameCounter >= capture.GetCaptureProperty(CapProp.FrameCount))
             {
-                    CvInvoke.CvtColor(image, ugray, Emgu.CV.CvEnum.ColorConversion.Bgr2Gray);
-                    Rectangle[] facesDetected = face.DetectMultiScale(ugray, 1.1, 10, new Size(10, 10));
-                    faces.AddRange(facesDetected);
+                frameCounter = 0;
+                timer1.Enabled = false;
             }
-
-            foreach (Rectangle rect in faces)
-                input.Draw(rect, new Bgr(Color.Yellow), 2);
-
-
-            foreach (Rectangle rect in faces) //для каждого лица
-            {
-                res.ROI = rect; //для области содержащей лицо
-                Image<Bgra, byte> small = frame.ToImage<Bgra, byte>().Resize(rect.Width, rect.Height, Inter.Nearest); //создание
-                                                                                                                      //копирование изображения small на изображение res с использованием маски копирования mask
-                CvInvoke.cvCopy(small, res, small.Split()[3]);
-                res.ROI = System.Drawing.Rectangle.Empty;
-            }
-
-           imageBox1.Image  = res;
         }
     }
 }

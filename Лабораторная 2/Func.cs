@@ -15,14 +15,12 @@ namespace Лабораторная_2
 {
     class Func
     {
-        public VideoCapture capture;
-        CascadeClassifier face;
-        Mat image = new Mat();
-        Image<Bgr, byte> input;
-        Mat frame;
 
+        public Image<Gray, byte> bg = null;
         public Image<Bgr, byte> sourceImage; //глобальная переменная
-        public List<Rectangle> rois = new List<Rectangle>();
+
+
+        BackgroundSubtractorMOG2 subtractor = new BackgroundSubtractorMOG2(1000, 32, true);
 
         public void Source(string fileName)
         {
@@ -30,65 +28,86 @@ namespace Лабораторная_2
 
         }
 
-        public Image<Bgr, byte> Binarization()
+        private Image<Gray, byte> FilterMask(Image<Gray, byte> mask)
         {
-            var resultImage = sourceImage.CopyBlank();
+            var anchor = new Point(-1, -1);
+            var borderValue = new MCvScalar(1);
+            // создание структурного элемента заданного размера и формы для морфологических операций
+            var kernel = CvInvoke.GetStructuringElement(ElementShape.Ellipse, new Size(3, 3), anchor);
+            // заполнение небольших тёмных областей
+            var closing = mask.MorphologyEx(MorphOp.Close, kernel, anchor, 1, BorderType.Default,
+            borderValue);
+            // удаление шумов
+            var opening = closing.MorphologyEx(MorphOp.Open, kernel, anchor, 1, BorderType.Default,
+            borderValue);
+            // расширение для слияния небольших смежных областей
+            var dilation = opening.Dilate(7);
+            // пороговое преобразование для удаления теней
+            var threshold = dilation.ThresholdBinary(new Gray(240), new Gray(255));
+            return threshold;
+        }
 
-            var grayImage = sourceImage.Convert<Gray, byte>();
-            grayImage._ThresholdBinaryInv(new Gray(100), new Gray(255));
-            grayImage._Dilate(5);
+        public Image<Bgr, byte> obl(Mat frame, int tb1)
+        {
+            Image<Gray, byte> cur = frame.ToImage<Gray, byte>();
 
+            var foregroundMask = cur.CopyBlank();
+            foregroundMask = FilterMask(foregroundMask);
+
+            subtractor.Apply(cur, foregroundMask);
+
+            foregroundMask._ThresholdBinary(new Gray(100), new Gray(255));
+
+            foregroundMask.Erode(3);
+            foregroundMask.Dilate(4);
 
             VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
-            CvInvoke.FindContours(grayImage, contours, null, RetrType.List, ChainApproxMethod.ChainApproxSimple);
+            CvInvoke.FindContours(foregroundMask, contours, null, RetrType.External, ChainApproxMethod.ChainApproxTc89L1);
 
-            var output = sourceImage.Copy();
+            var output = frame.ToImage<Bgr, byte>().Copy();
+
             for (int i = 0; i < contours.Size; i++)
             {
-                if (CvInvoke.ContourArea(contours[i], false) > 50) //игнорирование маленьких контуров
+                if (CvInvoke.ContourArea(contours[i]) > tb1) //игнорирование маленьких контуров
                 {
                     Rectangle rect = CvInvoke.BoundingRectangle(contours[i]);
-                    rois.Add(rect);
                     output.Draw(rect, new Bgr(Color.Blue), 1);
                 }
             }
-            resultImage = output.Convert<Bgr, byte>();
-
-            return resultImage;
-        }
-
-        public Image<Bgr, byte> ROI(int idx)
-        {
-            var resultImage = sourceImage.Copy();
-            Rectangle rect = rois[idx];
-            resultImage.Draw(rect, new Bgr(Color.Blue), 1);
-            return resultImage;
-        }
-
-        public Image<Bgr, byte> ROIOut(int idx)
-        {
-            var resultImage = sourceImage.Copy();
-            resultImage.ROI = rois[idx];
-
-            return resultImage;
+            return output;
         }
 
 
-        public String Translate(Image<Bgr, byte> roiImg, string language)
+        public Image<Bgr, byte> obl2(Mat frame, int tb1)
         {
-            Tesseract _ocr = new Tesseract("D:\\AOIClab5", language, OcrEngineMode.TesseractLstmCombined);
 
-            _ocr.SetImage(roiImg); //фрагмент изображения, содержащий текст
-            _ocr.Recognize(); //распознание текста
-            Tesseract.Character[] words = _ocr.GetCharacters(); //получение найденных символов
+            Image<Gray, byte> cur = frame.ToImage<Gray, byte>();
+            Image<Bgr, byte> curBgr = frame.ToImage<Bgr, byte>();
 
-            StringBuilder strBuilder = new StringBuilder();
-            for (int i = 0; i < words.Length; i++)
+            if (bg == null) { bg = cur; }
+
+            Image<Gray, byte> diff = bg.AbsDiff(cur);
+
+            diff._ThresholdBinary(new Gray(100), new Gray(255));
+
+            diff.Erode(3);
+            diff.Dilate(4);
+
+            VectorOfVectorOfPoint contours = new VectorOfVectorOfPoint();
+
+            CvInvoke.FindContours(diff, contours, null, RetrType.External, ChainApproxMethod.ChainApproxTc89L1);
+
+            var output = curBgr;
+
+            for (int i = 0; i < contours.Size; i++)
             {
-                strBuilder.Append(words[i].Text);
+                if (CvInvoke.ContourArea(contours[i]) > tb1) //игнорирование маленьких контуров
+                {
+                    Rectangle rect = CvInvoke.BoundingRectangle(contours[i]);
+                    output.Draw(rect, new Bgr(Color.Blue), 1);
+                }
             }
-
-            return strBuilder.ToString();
+            return output;
         }
     }
 }
